@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a containerized Cloudflare Dynamic DNS updater that runs as a Docker container with cron scheduling. The application automatically updates DNS A records for specified subdomains when the public IP address changes.
+This is a containerized Cloudflare Dynamic DNS updater that runs as a Docker container with periodic scheduling. The application automatically updates DNS A records for specified subdomains when the public IP address changes.
 
 ## Architecture
 
-- **Dockerfile**: Alpine Linux-based container with bash, curl, jq, and dcron
+- **Dockerfile**: Alpine Linux-based container with bash, curl, and jq
 - **script.sh**: Main DNS update logic that handles multiple subdomains
-- **entrypoint.sh**: Container initialization and cron setup
+- **entrypoint.sh**: Container initialization with sleep loop for periodic updates
 - **docker-compose.yml**: Service orchestration with environment configuration
 
 ## Key Components
@@ -26,7 +26,7 @@ This is a containerized Cloudflare Dynamic DNS updater that runs as a Docker con
 - `API_TOKEN` (required): Cloudflare API token
 - `DOMAIN` (required): Root domain (e.g., `example.com`)
 - `SUB_DOMAIN` (required): Single subdomain or multiple separated by semicolons
-- `CRON_SCHEDULE` (optional): Default `*/5 * * * *` (every 5 minutes)
+- `UPDATE_INTERVAL_MINUTES` (optional): Update interval in minutes, default `5`
 - `TZ` (optional): Timezone, default `UTC`
 
 ## Common Commands
@@ -43,11 +43,12 @@ docker run -d \
   -e SUB_DOMAIN=home \
   cloudflare-ddns
 
-# Run multiple subdomains
+# Run multiple subdomains with custom interval
 docker run -d \
   -e API_TOKEN=your_token \
   -e DOMAIN=example.com \
   -e SUB_DOMAIN="home;vpn;api" \
+  -e UPDATE_INTERVAL_MINUTES=10 \
   cloudflare-ddns
 ```
 
@@ -71,8 +72,8 @@ bash script.sh
 # View container logs
 docker logs [container_id]
 
-# Check cron job
-docker exec [container_id] crontab -l
+# Check logs for periodic updates
+docker exec [container_id] tail -f /var/log/cloudflare-ddns.log
 ```
 
 ## Build and Deployment

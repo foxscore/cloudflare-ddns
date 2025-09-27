@@ -1,36 +1,43 @@
 # Cloudflare DDNS Docker
 
-A containerized Cloudflare Dynamic DNS updater that automatically fetches zone IDs and runs as a cron job.
+A containerized Cloudflare Dynamic DNS updater that automatically fetches zone IDs and runs with periodic updates.
 
 ## Environment Variables
 
 - `API_TOKEN` (required): Your Cloudflare API token
 - `DOMAIN` (required): Your domain (e.g., `example.com`)
 - `SUB_DOMAIN` (required): Your subdomain(s). Can be a single subdomain (e.g., `home`) or multiple subdomains separated by semicolons (e.g., `home;vpn;api`)
-- `CRON_SCHEDULE` (optional): Cron schedule, default is `*/5 * * * *` (every 5 minutes)
+- `UPDATE_INTERVAL_MINUTES` (optional): Update interval in minutes, default is `5`
 - `TZ` (optional): Timezone, default is `UTC`
 
 ## Usage
 
 ### Single Subdomain
 ```bash
-docker build -t cloudflare-ddns .
 docker run -d \
-  --cap-add=SYS_TIME \
   -e API_TOKEN=your_token_here \
   -e DOMAIN=example.com \
   -e SUB_DOMAIN=home \
-  cloudflare-ddns
+  ghcr.io/foxscore/cloudflare-ddns:latest
 ```
 
 ### Multiple Subdomains
 ```bash
 docker run -d \
-  --cap-add=SYS_TIME \
   -e API_TOKEN=your_token_here \
   -e DOMAIN=example.com \
   -e SUB_DOMAIN="home;vpn;api;server" \
-  cloudflare-ddns
+  ghcr.io/foxscore/cloudflare-ddns:latest
+```
+
+### Custom Update Interval
+```bash
+docker run -d \
+  -e API_TOKEN=your_token_here \
+  -e DOMAIN=example.com \
+  -e SUB_DOMAIN=home \
+  -e UPDATE_INTERVAL_MINUTES=10 \
+  ghcr.io/foxscore/cloudflare-ddns:latest
 ```
 
 ### Docker Compose
@@ -39,17 +46,21 @@ docker run -d \
 docker-compose up -d
 ```
 
-## Important Notes
+## Building from Source
 
-### Required Capability
-The container requires the `SYS_TIME` capability for the cron daemon to function properly. This capability is included in the provided docker-compose.yml file and the examples above. Without this capability, you may see errors like "setpgid: Operation not permitted".
+If you prefer to build the image yourself instead of using the pre-built image:
+
+```bash
+docker build -t cloudflare-ddns .
+# Then use cloudflare-ddns instead of ghcr.io/foxscore/cloudflare-ddns:latest
+```
 
 ## Features
 
 - Automatically fetches and caches Cloudflare zone ID
 - Supports multiple subdomains in a single container
 - Preserves existing DNS record settings (TTL, proxy status)
-- Runs as a cron job with configurable schedule
+- Runs with configurable update intervals
 - Logs all operations with timestamps
 - No persistent volumes needed (cache stored in container)
 - Tracks success/failure for each subdomain individually

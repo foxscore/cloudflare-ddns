@@ -2,13 +2,11 @@ version: '3.8'
 
 services:
   cloudflare-ddns:
-    build: .
+    image: ghcr.io/foxscore/cloudflare-ddns:latest
     environment:
       - API_TOKEN=your_cloudflare_api_token_here
       - DOMAIN=example.com
       - SUB_DOMAIN=home;vpn;api  # Multiple subdomains separated by semicolons
-      - CRON_SCHEDULE=*/5 * * * *  # Every 5 minutes (default)
+      - UPDATE_INTERVAL_MINUTES=5  # Every 5 minutes (default)
       - TZ=UTC
-    cap_add:
-      - SYS_TIME  # Required for cron daemon to work properly
     restart: unless-stopped
