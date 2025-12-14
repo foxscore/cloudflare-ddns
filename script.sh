@@ -151,8 +151,11 @@ sync_spf_record() {
     fi
 
     # Replace all ip4: mechanisms with current IP
-    # This regex replaces ip4:x.x.x.x or ip4:x.x.x.x/xx with ip4:$CURRENT_IP
-    # More restrictive pattern to match valid IPv4 addresses (0-255 for each octet)
+    # Uses pattern ([0-9]{1,3}\.){3}[0-9]{1,3} which allows 0-999 per octet
+    # This is acceptable because:
+    # 1. We're only matching IPs already validated by Cloudflare's API
+    # 2. The current IP comes from a trusted source (icanhazip.com)
+    # 3. Cloudflare's API will reject invalid IPs on update
     NEW_SPF_CONTENT=$(echo "$SPF_CONTENT" | sed -E "s/ip4:([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]+)?/ip4:$CURRENT_IP/g")
 
     # Check if SPF content changed
@@ -172,7 +175,7 @@ sync_spf_record() {
         --data "{\"type\":\"TXT\",\"name\":\"$SPF_RECORD_NAME\",\"content\":\"$NEW_SPF_CONTENT\",\"ttl\":$SPF_TTL,\"proxied\":$SPF_PROXIED}")
 
     # Check if the API call was successful
-    SUCCESS=$(echo $RESPONSE | jq -r '.success')
+    SUCCESS=$(echo $RESPONSE | jq -r '.success // false')
     if [ "$SUCCESS" = "true" ]; then
         echo "$(date): SPF record updated successfully"
         return 0
