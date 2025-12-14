@@ -131,6 +131,12 @@ sync_spf_record() {
         return 0
     fi
 
+    # Check for multiple SPF records (RFC 7208 violation)
+    SPF_COUNT=$(echo $SPF_DATA | jq -r '[.result[] | select(.content | startswith("v=spf1"))] | length')
+    if [ "$SPF_COUNT" -gt 1 ]; then
+        echo "$(date): WARNING: Multiple SPF records found ($SPF_COUNT). RFC 7208 states only one SPF record should exist. Processing first record only."
+    fi
+
     SPF_RECORD_ID=$(echo $SPF_RECORD | jq -r '.id')
     SPF_CONTENT=$(echo $SPF_RECORD | jq -r '.content')
     SPF_TTL=$(echo $SPF_RECORD | jq -r '.ttl // 300')
@@ -146,7 +152,8 @@ sync_spf_record() {
 
     # Replace all ip4: mechanisms with current IP
     # This regex replaces ip4:x.x.x.x or ip4:x.x.x.x/xx with ip4:$CURRENT_IP
-    NEW_SPF_CONTENT=$(echo "$SPF_CONTENT" | sed -E "s/ip4:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?/ip4:$CURRENT_IP/g")
+    # More restrictive pattern to match valid IPv4 addresses (0-255 for each octet)
+    NEW_SPF_CONTENT=$(echo "$SPF_CONTENT" | sed -E "s/ip4:([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]+)?/ip4:$CURRENT_IP/g")
 
     # Check if SPF content changed
     if [ "$SPF_CONTENT" = "$NEW_SPF_CONTENT" ]; then
@@ -209,9 +216,11 @@ done
 echo "$(date): Processed $TOTAL_UPDATES subdomains, $FAILED_UPDATES failed"
 
 # Synchronize SPF record if enabled
-if ! sync_spf_record; then
-    echo "$(date): SPF synchronization failed"
-    FAILED_UPDATES=$((FAILED_UPDATES + 1))
+if [ "$SYNC_SPF" = "true" ]; then
+    if ! sync_spf_record; then
+        echo "$(date): SPF synchronization failed"
+        exit 1
+    fi
 fi
 
 if [ $FAILED_UPDATES -gt 0 ]; then
