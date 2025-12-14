@@ -9,6 +9,8 @@ A containerized Cloudflare Dynamic DNS updater that automatically fetches zone I
 - `SUB_DOMAIN` (required): Your subdomain(s). Can be a single subdomain (e.g., `home`) or multiple subdomains separated by semicolons (e.g., `home;vpn;api`)
 - `UPDATE_INTERVAL_MINUTES` (optional): Update interval in minutes, default is `5`
 - `TZ` (optional): Timezone, default is `UTC`
+- `SYNC_SPF` (optional): Set to `true` to enable SPF record synchronization, default is `false`
+- `SPF_RECORD_NAME` (optional): Domain name for SPF record, default is the root domain (`$DOMAIN`)
 
 ## Usage
 
@@ -46,6 +48,29 @@ docker run -d \
 docker-compose up -d
 ```
 
+### With SPF Record Synchronization
+```bash
+docker run -d \
+  -e API_TOKEN=your_token_here \
+  -e DOMAIN=example.com \
+  -e SUB_DOMAIN=home \
+  -e SYNC_SPF=true \
+  ghcr.io/foxscore/cloudflare-ddns:latest
+```
+
+This will automatically update any `ip4:` mechanisms in your SPF record when your IP changes.
+
+### Custom SPF Record Name
+```bash
+docker run -d \
+  -e API_TOKEN=your_token_here \
+  -e DOMAIN=example.com \
+  -e SUB_DOMAIN=home \
+  -e SYNC_SPF=true \
+  -e SPF_RECORD_NAME=mail.example.com \
+  ghcr.io/foxscore/cloudflare-ddns:latest
+```
+
 ## Building from Source
 
 If you prefer to build the image yourself instead of using the pre-built image:
@@ -64,3 +89,4 @@ docker build -t cloudflare-ddns .
 - Logs all operations with timestamps
 - No persistent volumes needed (cache stored in container)
 - Tracks success/failure for each subdomain individually
+- Optional SPF record synchronization to keep `ip4:` mechanisms updated

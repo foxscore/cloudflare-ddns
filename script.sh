@@ -5,8 +5,14 @@ if [ -z "$API_TOKEN" ] || [ -z "$DOMAIN" ] || [ -z "$SUB_DOMAIN" ]; then
     echo "$(date): ERROR: Required environment variables missing"
     echo "Please set: API_TOKEN, DOMAIN, SUB_DOMAIN"
     echo "SUB_DOMAIN can contain multiple subdomains separated by semicolons (;)"
+    echo "Optional: SYNC_SPF=true to enable SPF record synchronization"
+    echo "Optional: SPF_RECORD_NAME (defaults to root domain)"
     exit 1
 fi
+
+# SPF synchronization defaults
+SYNC_SPF=${SYNC_SPF:-false}
+SPF_RECORD_NAME=${SPF_RECORD_NAME:-$DOMAIN}
 
 ZONE_CACHE_FILE="/tmp/zone_cache.txt"
 
@@ -96,6 +102,90 @@ update_dns_record() {
     fi
 }
 
+# Function to synchronize SPF record with current IP
+sync_spf_record() {
+    if [ "$SYNC_SPF" != "true" ]; then
+        return 0
+    fi
+
+    echo "$(date): Checking SPF record for $SPF_RECORD_NAME"
+
+    # Get current SPF record
+    SPF_DATA=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$SPF_RECORD_NAME&type=TXT" \
+        -H "Authorization: Bearer $API_TOKEN" \
+        -H "Content-Type: application/json")
+
+    # Check if API call was successful
+    API_SUCCESS=$(echo $SPF_DATA | jq -r '.success // false')
+    if [ "$API_SUCCESS" != "true" ]; then
+        echo "$(date): ERROR: SPF API call failed for $SPF_RECORD_NAME"
+        echo "$(date): Response: $SPF_DATA"
+        return 1
+    fi
+
+    # Find SPF record among TXT records
+    SPF_RECORD=$(echo $SPF_DATA | jq -r '.result[] | select(.content | startswith("v=spf1")) | {id: .id, content: .content, ttl: .ttl, proxied: .proxied}')
+    
+    if [ -z "$SPF_RECORD" ]; then
+        echo "$(date): No SPF record found for $SPF_RECORD_NAME. Skipping SPF sync."
+        return 0
+    fi
+
+    # Check for multiple SPF records (RFC 7208 violation)
+    SPF_COUNT=$(echo $SPF_DATA | jq -r '[.result[] | select(.content | startswith("v=spf1"))] | length')
+    if [ "$SPF_COUNT" -gt 1 ]; then
+        echo "$(date): WARNING: Multiple SPF records found ($SPF_COUNT). RFC 7208 states only one SPF record should exist. Processing first record only."
+    fi
+
+    SPF_RECORD_ID=$(echo $SPF_RECORD | jq -r '.id')
+    SPF_CONTENT=$(echo $SPF_RECORD | jq -r '.content')
+    SPF_TTL=$(echo $SPF_RECORD | jq -r '.ttl // 300')
+    SPF_PROXIED=$(echo $SPF_RECORD | jq -r '.proxied // false')
+
+    echo "$(date): Current SPF record: $SPF_CONTENT"
+
+    # Check if SPF contains any ip4 mechanism
+    if ! echo "$SPF_CONTENT" | grep -q "ip4:"; then
+        echo "$(date): SPF record does not contain ip4 mechanism. Skipping SPF sync."
+        return 0
+    fi
+
+    # Replace all ip4: mechanisms with current IP
+    # Uses pattern ([0-9]{1,3}\.){3}[0-9]{1,3} which allows 0-999 per octet
+    # This is acceptable because:
+    # 1. We're only matching IPs already validated by Cloudflare's API
+    # 2. The current IP comes from a trusted source (icanhazip.com)
+    # 3. Cloudflare's API will reject invalid IPs on update
+    NEW_SPF_CONTENT=$(echo "$SPF_CONTENT" | sed -E "s/ip4:([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]+)?/ip4:$CURRENT_IP/g")
+
+    # Check if SPF content changed
+    if [ "$SPF_CONTENT" = "$NEW_SPF_CONTENT" ]; then
+        echo "$(date): SPF record already up to date"
+        return 0
+    fi
+
+    echo "$(date): SPF record needs update"
+    echo "$(date): Old: $SPF_CONTENT"
+    echo "$(date): New: $NEW_SPF_CONTENT"
+
+    # Update SPF record
+    RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$SPF_RECORD_ID" \
+        -H "Authorization: Bearer $API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"type\":\"TXT\",\"name\":\"$SPF_RECORD_NAME\",\"content\":\"$NEW_SPF_CONTENT\",\"ttl\":$SPF_TTL,\"proxied\":$SPF_PROXIED}")
+
+    # Check if the API call was successful
+    SUCCESS=$(echo $RESPONSE | jq -r '.success // false')
+    if [ "$SUCCESS" = "true" ]; then
+        echo "$(date): SPF record updated successfully"
+        return 0
+    else
+        echo "$(date): Failed to update SPF record"
+        echo "$(date): Response: $RESPONSE"
+        return 1
+    fi
+}
+
 # Get zone ID (from cache or API)
 ZONE_ID=$(get_zone_id)
 
@@ -127,6 +217,14 @@ for SUBDOMAIN in "${SUBDOMAINS[@]}"; do
 done
 
 echo "$(date): Processed $TOTAL_UPDATES subdomains, $FAILED_UPDATES failed"
+
+# Synchronize SPF record if enabled
+if [ "$SYNC_SPF" = "true" ]; then
+    if ! sync_spf_record; then
+        echo "$(date): SPF synchronization failed"
+        exit 1
+    fi
+fi
 
 if [ $FAILED_UPDATES -gt 0 ]; then
     exit 1
