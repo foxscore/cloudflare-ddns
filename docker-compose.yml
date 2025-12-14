@@ -9,4 +9,7 @@ services:
       - SUB_DOMAIN=home;vpn;api  # Multiple subdomains separated by semicolons
       - UPDATE_INTERVAL_MINUTES=5  # Every 5 minutes (default)
       - TZ=UTC
+      # Optional: Enable SPF record synchronization
+      # - SYNC_SPF=true
+      # - SPF_RECORD_NAME=example.com  # Defaults to DOMAIN if not specified
     restart: unless-stopped
